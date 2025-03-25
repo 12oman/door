@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Door - Scroll Video Control</title>
+    <style>
+        /* Reset and base styles */
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: Arial, sans-serif;
+        }
+        
+        /* Container with scrollable height */
+        .scroll-container {
+            height: 500vh; /* 5x viewport height for scrolling - adjust based on desired scroll sensitivity */
+        }
+        
+        /* Video styles */
+        .video-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        #doorVideo {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            min-width: 100%;
+            min-height: 100%;
+            width: auto;
+            height: auto;
+            transform: translate(-50%, -50%);
+            object-fit: cover;
+        }
+        
+        /* Title overlay */
+        .title {
+            position: fixed;
+            top: 2rem;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-size: 3rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+            z-index: 10;
+            pointer-events: none;
+        }
+        
+        /* Scroll indicator */
+        .scroll-indicator {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 1rem;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+            opacity: 0.8;
+            animation: fadeInOut 2s infinite;
+            z-index: 10;
+            pointer-events: none;
+        }
+        
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="video-container">
+        <video id="doorVideo" preload="auto" playsinline></video>
+    </div>
+    
+    <h1 class="title">DOOooooR</h1>
+    <div class="scroll-indicator">Scroll to control the door</div>
+    
+    <!-- This empty container creates the scrollable area -->
+    <div class="scroll-container"></div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const video = document.getElementById('doorVideo');
+            let videoLoaded = false;
+            let lastScrollPosition = 0;
+            let ticking = false;
+            let isPlaying = false;
+            let audioContext = null;
+            
+            // Initialize audio context for better control
+            function initAudio() {
+                // Create audio context only on user interaction to comply with autoplay policies
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // Connect video element to audio context for better control
+                    const source = audioContext.createMediaElementSource(video);
+                    source.connect(audioContext.destination);
+                    
+                    console.log('Audio context initialized');
+                }
+                
+                // Resume audio context if it's suspended
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+            }
+            
+            // Load video with error handling
+            function loadVideo() {
+                // Make sure video is not muted
+                video.muted = false;
+                
+                // Try direct assignment first (simpler approach)
+                video.src = 'assets/door.mp4';
+                
+                // Setup event handlers
+                video.addEventListener('loadedmetadata', () => {
+                    videoLoaded = true;
+                    console.log('Video loaded successfully. Duration:', video.duration);
+                    // Set initial frame
+                    video.currentTime = 0;
+                    // Pause to prevent automatic playback
+                    video.pause();
+                });
+                
+                // Error handling - try alternative paths
+                video.addEventListener('error', () => {
+                    console.error('Error loading video from primary path, trying alternatives');
+                    const alternativePaths = ['door.mp4', './door.mp4', '/door.mp4', '../door.mp4', 'assets/door.mp4'];
+                    
+                    // Try alternative paths
+                    for (const path of alternativePaths) {
+                        try {
+                            video.src = path;
+                            break;
+                        } catch (e) {
+                            console.error(`Failed to load from ${path}`);
+                        }
+                    }
+                });
+            }
+            
+            // Scroll handler with throttling for better performance
+            function handleScroll() {
+                if (!ticking) {
+                    // Use requestAnimationFrame to limit updates
+                    window.requestAnimationFrame(() => {
+                        if (videoLoaded) {
+                            // Calculate scroll percentage (0 to 1)
+                            const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
+                            const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+                            const scrollPercentage = Math.max(0, Math.min(1, scrollPosition / scrollHeight));
+                            
+                            // Check if user is actively scrolling
+                            const isActivelyScrolling = Math.abs(scrollPosition - lastScrollPosition) > 0;
+                            lastScrollPosition = scrollPosition;
+                            
+                            // Set video time based on scroll position
+                            const targetTime = scrollPercentage * video.duration;
+                            
+                            // Only update if the change is significant enough
+                            if (Math.abs(video.currentTime - targetTime) > 0.01) {
+                                video.currentTime = targetTime;
+                            }
+                            
+                            // Play audio when actively scrolling, otherwise pause
+                            if (isActivelyScrolling && !isPlaying) {
+                                // Initialize audio on first scroll (to comply with browser policies)
+                                initAudio();
+                                
+                                video.play();
+                                isPlaying = true;
+                                console.log('Playing audio');
+                                
+                                // Set a timeout to pause if scrolling stops
+                                clearTimeout(window.scrollTimeout);
+                                window.scrollTimeout = setTimeout(() => {
+                                    video.pause();
+                                    isPlaying = false;
+                                    console.log('Paused audio (scroll stopped)');
+                                }, 150); // Short delay to avoid stopping during slight pauses in scrolling
+                            }
+                        }
+                        ticking = false;
+                    });
+                    ticking = true;
+                }
+            }
+            
+            // Event Listeners
+            window.addEventListener('scroll', handleScroll, { passive: true });
+            
+            // Add click handler to initialize audio (needed for some browsers)
+            document.addEventListener('click', initAudio, { once: true });
+            
+            // Initialize
+            loadVideo();
+            
+            // Hide scroll indicator after some scrolling
+            window.addEventListener('scroll', () => {
+                const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+                if (scrollPosition > window.innerHeight * 0.5) {
+                    document.querySelector('.scroll-indicator').style.opacity = '0';
+                } else {
+                    document.querySelector('.scroll-indicator').style.opacity = '0.8';
+                }
+            }, { passive: true });
+        });
+    </script>
+</body>
+</html>
